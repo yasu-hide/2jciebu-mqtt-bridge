@@ -1,0 +1,7 @@
+[Unit]
+Description=2jciebu MQTT Discovery config publisher (run manually via systemctl start, idempotent)
+
+[Service]
+Type=oneshot
+EnvironmentFile=/opt/2jciebu-mqtt-bridge/.env
+ExecStart=/opt/2jciebu-mqtt-bridge/discovery/publish-discovery.sh

@@ -1,22 +1,13 @@
 #!/bin/sh
 set -eu
 
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-if [ -f "$SCRIPT_DIR/.env" ]; then
-  set -a
-  . "$SCRIPT_DIR/.env"
-  set +a
-fi
-
 : "${EXPORTER_URL:=http://localhost:8000/metrics}"
 : "${MQTT_HOST:?MQTT_HOST is required}"
 : "${MQTT_PORT:=1883}"
 : "${MQTT_TOPIC:=sensors/2jciebu/state}"
 
-TAG=2jciebu-mqtt-bridge
-
 METRICS=$(curl -sf --max-time 5 "$EXPORTER_URL") || {
-  logger -t "$TAG" "fetch failed: ${EXPORTER_URL} unreachable"
+  echo "fetch failed: ${EXPORTER_URL} unreachable" >&2
   exit 1
 }
 
@@ -34,7 +25,7 @@ JSON=$(printf '%s\n' "$METRICS" | awk '
 ')
 
 if [ "$JSON" = "{}" ]; then
-  logger -t "$TAG" "warning: 0 metrics parsed from ${EXPORTER_URL} (allowlistに一致する行なし、exporter側の形状変化の可能性)"
+  echo "warning: 0 metrics parsed from ${EXPORTER_URL} (allowlistに一致する行なし、exporter側の形状変化の可能性)" >&2
   exit 0
 fi
 
@@ -45,8 +36,8 @@ fi
 
 # shellcheck disable=SC2086
 mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" $MQTT_AUTH -q 1 -r -t "$MQTT_TOPIC" -m "$JSON" || {
-  logger -t "$TAG" "mosquitto_pub failed: broker ${MQTT_HOST}:${MQTT_PORT} unreachable or auth error"
+  echo "mosquitto_pub failed: broker ${MQTT_HOST}:${MQTT_PORT} unreachable or auth error" >&2
   exit 1
 }
 
-logger -t "$TAG" "published to ${MQTT_TOPIC}"
+echo "published to ${MQTT_TOPIC}"

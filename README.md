@@ -1,19 +1,19 @@
 # 2jciebu-mqtt-bridge
 
-`2jciebu-exporter`の`/metrics`をcronで1分ごとにポーリングし、センサー値をMQTTにJSONでpublishするブリッジ。Home Assistant向けのMQTT Discovery設定も一度だけ発行する。
+`2jciebu-exporter`の`/metrics`をsystemd-timerで1分ごとにポーリングし、センサー値をMQTTにJSONでpublishするブリッジ。Home Assistant向けのMQTT Discovery設定も一度だけ発行する。
 
-常駐デーモンを持たない設計（cronのワンショット実行のみ）のため、メモリの小さい機体でも安心して動かせる。
+常駐デーモンを持たない設計（systemd oneshotサービス+timerによる定期実行のみ）のため、メモリの小さい機体でも安心して動かせる。
 
 ## 前提
 
 - 稼働中の`2jciebu-exporter`（同一ホスト、`http://localhost:8000/metrics`が読める）
 - MQTTブローカー（同一LAN上、認証は任意）
-- Ubuntu/Debian系(apt)、cron、`curl`（標準搭載）
+- systemd搭載のLinux（Ubuntu/Debian系）、`curl`（標準搭載）
 
 ## 導入手順
 
 ```bash
-sudo apt-get install -y mosquitto-clients   # curl/awk/greploggerは標準搭載のため追加インストール不要
+sudo apt-get install -y mosquitto-clients   # curl/awkは標準搭載のため追加インストール不要
 
 sudo mkdir -p /opt/2jciebu-mqtt-bridge
 sudo cp poll-and-publish.sh /opt/2jciebu-mqtt-bridge/
@@ -24,15 +24,17 @@ sudo cp .env.example /opt/2jciebu-mqtt-bridge/.env
 sudo chmod 600 /opt/2jciebu-mqtt-bridge/.env   # MQTT_PASSWORDを含むため権限を絞る
 sudo "$EDITOR" /opt/2jciebu-mqtt-bridge/.env   # MQTT_HOST等の値を編集
 
-sudo cp etc/cron.d.2jciebu-mqtt-bridge /etc/cron.d/2jciebu-mqtt-bridge
+sudo cp systemd/2jciebu-mqtt-bridge.service systemd/2jciebu-mqtt-bridge.timer systemd/2jciebu-mqtt-discovery.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now 2jciebu-mqtt-bridge.timer
 ```
 
-`poll-and-publish.sh`と`discovery/publish-discovery.sh`はどちらも自分と同じディレクトリ（後者は親ディレクトリ）にある`.env`を自動的に読み込む。`/etc/cron.d/2jciebu-mqtt-bridge`自体には秘密情報を置かないため、権限は既定のままでよい。
+`2jciebu-mqtt-bridge.service`・`2jciebu-mqtt-discovery.service`はどちらも`EnvironmentFile=/opt/2jciebu-mqtt-bridge/.env`で設定を読み込む。`.env`以外のファイルには秘密情報を置かないため、`/etc/systemd/system/`配下のunitファイル自体の権限は既定のままでよい。
 
-Home Assistant向けMQTT Discoveryの登録（初回のみ、冪等なので何度実行してもよい。`.env`の値がそのまま使われる）:
+Home Assistant向けMQTT Discoveryの登録（初回のみ、冪等なので何度実行してもよい）:
 
 ```bash
-sudo /opt/2jciebu-mqtt-bridge/discovery/publish-discovery.sh
+sudo systemctl start 2jciebu-mqtt-discovery.service
 ```
 
 ## 設定ファイル（`/opt/2jciebu-mqtt-bridge/.env`）
@@ -46,7 +48,7 @@ sudo /opt/2jciebu-mqtt-bridge/discovery/publish-discovery.sh
 | `MQTT_TOPIC` | `sensors/2jciebu/state` | publish先トピック |
 | `DEVICE_ID` | `2jciebu_01` | (Discoveryスクリプト用) Home Assistant上のデバイス識別子。複数センサーを増設する場合はホストごとに一意な値にすること |
 
-ポーリング間隔はcronのスケジュール行（既定で毎分=60秒間隔）で決まる。変更したい場合は`/etc/cron.d/2jciebu-mqtt-bridge`の`* * * * *`部分を編集する。
+ポーリング間隔は`2jciebu-mqtt-bridge.timer`の`OnCalendar=`行（既定`minutely`=1分間隔）で決まる。変更したい場合は`/etc/systemd/system/2jciebu-mqtt-bridge.timer`を編集し`sudo systemctl daemon-reload && sudo systemctl restart 2jciebu-mqtt-bridge.timer`する。
 
 ## publishされるJSONの例
 
@@ -56,18 +58,30 @@ sudo /opt/2jciebu-mqtt-bridge/discovery/publish-discovery.sh
 
 キー名は`sensor_omron_`で始まる既知の13メトリクスのみ（許可リスト方式）。exporter側にこれ以外のメトリクスが増えても無視され、該当行が1件もマッチしなかった場合はpublishをスキップしてログに警告を残す（無音のデータ欠落を避けるため）。
 
+## 動作確認
+
+```bash
+curl -s http://localhost:8000/metrics | grep sensor_omron    # exporterが値を返しているか確認
+mosquitto_sub -h <broker> -t sensors/2jciebu/state -v         # 別ターミナルで購読
+
+sudo systemctl start 2jciebu-mqtt-bridge.service               # timerを待たず今すぐ1回実行
+journalctl -u 2jciebu-mqtt-bridge.service -n 20                # 実行結果を確認
+
+systemctl list-timers 2jciebu-mqtt-bridge.timer                # 次回実行予定時刻を確認
+```
+
 ## トラブルシューティング
 
-ログは`journalctl`または`/var/log/syslog`に`2jciebu-mqtt-bridge`タグで出力される。
+ログは`journalctl -u 2jciebu-mqtt-bridge.service`（Discoveryは`-u 2jciebu-mqtt-discovery.service`）で確認する。
 
 | ログメッセージ | 原因 | 対処 |
 |---|---|---|
-| `MQTT_HOST is required` | `/opt/2jciebu-mqtt-bridge/.env`に`MQTT_HOST`が設定されていない、または`.env`自体が存在しない | `.env`を配置し値を設定する |
-| `fetch failed: ... unreachable` | exporterが停止中/到達不能 | exporterのサービス状態・`EXPORTER_URL`を確認。次回のcron実行(最大1分後)で自動的に再試行される |
-| `warning: 0 metrics parsed ...` | exporter側のメトリクス形状が変わり、許可リストに一致する行がなくなった | exporterの`/metrics`を確認し、必要ならこのスクリプトの許可リストを更新する |
-| `mosquitto_pub failed: ... unreachable or auth error` | MQTTブローカーに到達できない、または認証エラー | ブローカーの状態・`MQTT_HOST`/`MQTT_PORT`/認証情報を確認。次回のcron実行で自動的に再試行される |
+| `MQTT_HOST is required` | `/opt/2jciebu-mqtt-bridge/.env`に`MQTT_HOST`が設定されていない、または`.env`自体が存在しない | `.env`を配置し値を設定してから`sudo systemctl start 2jciebu-mqtt-bridge.service`で再実行 |
+| `fetch failed: ... unreachable` | exporterが停止中/到達不能 | exporterのサービス状態・`EXPORTER_URL`を確認。次回のtimer実行(最大1分後)で自動的に再試行される |
+| `warning: 0 metrics parsed ...` | exporter側のメトリクス形状が変わり、許可リストに一致する行がなくなった | exporterの`/metrics`を確認し、必要なら`poll-and-publish.sh`の許可リストを更新する |
+| `mosquitto_pub failed: ... unreachable or auth error` | MQTTブローカーに到達できない、または認証エラー | ブローカーの状態・`MQTT_HOST`/`MQTT_PORT`/認証情報を確認。次回のtimer実行で自動的に再試行される |
 
-何も出力がない（cronが動いていない）場合は`ls -la /opt/2jciebu-mqtt-bridge/.env`で`.env`の存在・権限(600)を、`cat /etc/cron.d/2jciebu-mqtt-bridge`でスケジュール行の書式を確認する。
+timerが動いているか自体を疑う場合は`systemctl status 2jciebu-mqtt-bridge.timer`で`active (waiting)`になっているか、`systemctl list-timers`に`Last`/`Next`の時刻が入っているかを確認する。
 
 ## MQTT Discoveryで登録したエンティティを削除したい場合
 
@@ -82,10 +96,12 @@ mosquitto_pub -h <broker> -r -t "homeassistant/sensor/<device_id>/<metric>/confi
 - MQTTブローカーは信頼できるLAN上にある前提で、TLS対応は行っていない。ブローカーをLAN外に公開する場合は再検討すること。
 - センサー本体の故障（`2jciebu-exporter`側の`SensorSerialError`）が起きた場合、exporterは直前の値をHTTP 200で返し続ける。本ブリッジ単体では新鮮な値と古い値を区別できないため、古い値をそのままpublishし続ける可能性がある。
 
-## ローカルでの動作確認
+## アンインストール
 
 ```bash
-curl -s http://localhost:8000/metrics | grep sensor_omron   # exporterが値を返しているか確認
-mosquitto_sub -h <broker> -t sensors/2jciebu/state -v        # 別ターミナルで購読
-sudo /opt/2jciebu-mqtt-bridge/poll-and-publish.sh             # 手動実行して即時確認(.envの値を使う)
+sudo systemctl disable --now 2jciebu-mqtt-bridge.timer
+sudo rm /etc/systemd/system/2jciebu-mqtt-bridge.service /etc/systemd/system/2jciebu-mqtt-bridge.timer /etc/systemd/system/2jciebu-mqtt-discovery.service
+sudo systemctl daemon-reload
+sudo rm -rf /opt/2jciebu-mqtt-bridge
 ```
+既存の`2jciebu-exporter`（`2jciebu-prometheus.service`）には一切触れないため、アンインストールしても既存機能への影響はない。

@@ -1,0 +1,9 @@
+[Unit]
+Description=Run 2jciebu-mqtt-bridge every minute
+
+[Timer]
+OnCalendar=minutely
+Persistent=true
+
+[Install]
+WantedBy=timers.target

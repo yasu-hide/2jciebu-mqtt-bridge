@@ -1,0 +1,9 @@
+[Unit]
+Description=2jciebu sensor values -> MQTT bridge (one-shot poll+publish)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/opt/2jciebu-mqtt-bridge/.env
+ExecStart=/opt/2jciebu-mqtt-bridge/poll-and-publish.sh

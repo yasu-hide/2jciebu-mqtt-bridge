@@ -1,13 +1,6 @@
 #!/bin/sh
 set -eu
 
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-if [ -f "$SCRIPT_DIR/.env" ]; then
-  set -a
-  . "$SCRIPT_DIR/.env"
-  set +a
-fi
-
 : "${MQTT_HOST:?MQTT_HOST is required}"
 : "${MQTT_PORT:=1883}"
 : "${MQTT_TOPIC:=sensors/2jciebu/state}"
