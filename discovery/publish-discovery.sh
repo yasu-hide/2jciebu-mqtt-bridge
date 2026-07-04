@@ -14,14 +14,19 @@ if [ -n "${MQTT_USERNAME:-}" ]; then
 fi
 
 # metric_key|表示名|unit|device_class
-# unit/device_classが未確定・要検証のものは空欄にしてある(README参照)。
+# device_classはOMRON公式データシート(CDSC-016)のOutput rangeで単位・意味を確認した
+# うえで設定。discomfort/si/pga/seismicはデータシート上も無単位またはHA未対応の単位
+# (kine/gal)のため対応するdevice_classがHAに存在せず空欄。heatは単位こそdegCだが
+# 気温そのものではない計算指標のためtemperatureは付与しない。vibrationは意味的には
+# enum相当だが、数値→文字列enumへの型変更が既存の履歴/automationに与える影響を
+# 精査してから別途対応する(空欄のまま)。
 METRICS='
 temperature|Temperature|°C|temperature
 humidity|Humidity|%|humidity
 light|Ambient Light|lx|illuminance
 barometric|Barometric Pressure|hPa|pressure
-noise|Sound Noise|dB|
-etvoc|eTVOC|ppb|
+noise|Sound Noise|dB|sound_pressure
+etvoc|eTVOC|ppb|volatile_organic_compounds_parts
 eco2|eCO2|ppm|carbon_dioxide
 discomfort|Discomfort Index||
 heat|Heat Stroke Index|°C|
