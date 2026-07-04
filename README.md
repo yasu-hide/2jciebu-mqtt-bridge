@@ -16,22 +16,26 @@
 sudo apt-get install -y mosquitto-clients   # curl/awk/greploggerは標準搭載のため追加インストール不要
 
 sudo mkdir -p /opt/2jciebu-mqtt-bridge
-sudo cp poll-and-publish.sh discovery/publish-discovery.sh /opt/2jciebu-mqtt-bridge/
-sudo chmod +x /opt/2jciebu-mqtt-bridge/*.sh
+sudo cp poll-and-publish.sh /opt/2jciebu-mqtt-bridge/
+sudo cp -r discovery /opt/2jciebu-mqtt-bridge/
+sudo chmod +x /opt/2jciebu-mqtt-bridge/poll-and-publish.sh /opt/2jciebu-mqtt-bridge/discovery/publish-discovery.sh
+
+sudo cp .env.example /opt/2jciebu-mqtt-bridge/.env
+sudo chmod 600 /opt/2jciebu-mqtt-bridge/.env   # MQTT_PASSWORDを含むため権限を絞る
+sudo "$EDITOR" /opt/2jciebu-mqtt-bridge/.env   # MQTT_HOST等の値を編集
 
 sudo cp etc/cron.d.2jciebu-mqtt-bridge /etc/cron.d/2jciebu-mqtt-bridge
-sudo chmod 600 /etc/cron.d/2jciebu-mqtt-bridge   # MQTT_PASSWORDを含むため権限を絞る
-sudo "$EDITOR" /etc/cron.d/2jciebu-mqtt-bridge   # MQTT_HOST等の値を編集
 ```
 
-Home Assistant向けMQTT Discoveryの登録（初回のみ、冪等なので何度実行してもよい）:
+`poll-and-publish.sh`と`discovery/publish-discovery.sh`はどちらも自分と同じディレクトリ（後者は親ディレクトリ）にある`.env`を自動的に読み込む。`/etc/cron.d/2jciebu-mqtt-bridge`自体には秘密情報を置かないため、権限は既定のままでよい。
+
+Home Assistant向けMQTT Discoveryの登録（初回のみ、冪等なので何度実行してもよい。`.env`の値がそのまま使われる）:
 
 ```bash
-sudo MQTT_HOST=<broker> MQTT_TOPIC=sensors/2jciebu/state DEVICE_ID=2jciebu_01 \
-  /opt/2jciebu-mqtt-bridge/discovery/publish-discovery.sh
+sudo /opt/2jciebu-mqtt-bridge/discovery/publish-discovery.sh
 ```
 
-## 設定ファイル（`/etc/cron.d/2jciebu-mqtt-bridge`の環境変数）
+## 設定ファイル（`/opt/2jciebu-mqtt-bridge/.env`）
 
 | 変数 | デフォルト | 説明 |
 |---|---|---|
@@ -58,12 +62,12 @@ sudo MQTT_HOST=<broker> MQTT_TOPIC=sensors/2jciebu/state DEVICE_ID=2jciebu_01 \
 
 | ログメッセージ | 原因 | 対処 |
 |---|---|---|
-| `MQTT_HOST is required` | `/etc/cron.d/2jciebu-mqtt-bridge`に`MQTT_HOST`が設定されていない | 値を設定する |
+| `MQTT_HOST is required` | `/opt/2jciebu-mqtt-bridge/.env`に`MQTT_HOST`が設定されていない、または`.env`自体が存在しない | `.env`を配置し値を設定する |
 | `fetch failed: ... unreachable` | exporterが停止中/到達不能 | exporterのサービス状態・`EXPORTER_URL`を確認。次回のcron実行(最大1分後)で自動的に再試行される |
 | `warning: 0 metrics parsed ...` | exporter側のメトリクス形状が変わり、許可リストに一致する行がなくなった | exporterの`/metrics`を確認し、必要ならこのスクリプトの許可リストを更新する |
 | `mosquitto_pub failed: ... unreachable or auth error` | MQTTブローカーに到達できない、または認証エラー | ブローカーの状態・`MQTT_HOST`/`MQTT_PORT`/認証情報を確認。次回のcron実行で自動的に再試行される |
 
-何も出力がない（cronが動いていない）場合は`grep 2jciebu-mqtt-bridge /etc/cron.d/2jciebu-mqtt-bridge`でファイルの権限(600)・書式を確認する。
+何も出力がない（cronが動いていない）場合は`ls -la /opt/2jciebu-mqtt-bridge/.env`で`.env`の存在・権限(600)を、`cat /etc/cron.d/2jciebu-mqtt-bridge`でスケジュール行の書式を確認する。
 
 ## MQTT Discoveryで登録したエンティティを削除したい場合
 
@@ -83,5 +87,5 @@ mosquitto_pub -h <broker> -r -t "homeassistant/sensor/<device_id>/<metric>/confi
 ```bash
 curl -s http://localhost:8000/metrics | grep sensor_omron   # exporterが値を返しているか確認
 mosquitto_sub -h <broker> -t sensors/2jciebu/state -v        # 別ターミナルで購読
-sudo MQTT_HOST=<broker> /opt/2jciebu-mqtt-bridge/poll-and-publish.sh   # 手動実行して即時確認
+sudo /opt/2jciebu-mqtt-bridge/poll-and-publish.sh             # 手動実行して即時確認(.envの値を使う)
 ```

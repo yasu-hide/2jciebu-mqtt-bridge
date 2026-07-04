@@ -1,0 +1,15 @@
+# 環境変数
+.env
+
+# エディタ
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ツール
+.gstack/

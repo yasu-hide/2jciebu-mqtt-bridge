@@ -1,7 +1,1 @@
-EXPORTER_URL=http://localhost:8000/metrics
-MQTT_HOST=192.168.1.10
-MQTT_PORT=1883
-MQTT_USERNAME=
-MQTT_PASSWORD=
-MQTT_TOPIC=sensors/2jciebu/state
 * * * * * admin /opt/2jciebu-mqtt-bridge/poll-and-publish.sh

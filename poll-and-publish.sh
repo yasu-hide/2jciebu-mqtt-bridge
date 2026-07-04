@@ -1,6 +1,13 @@
 #!/bin/sh
 set -eu
 
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [ -f "$SCRIPT_DIR/.env" ]; then
+  set -a
+  . "$SCRIPT_DIR/.env"
+  set +a
+fi
+
 : "${EXPORTER_URL:=http://localhost:8000/metrics}"
 : "${MQTT_HOST:?MQTT_HOST is required}"
 : "${MQTT_PORT:=1883}"
