@@ -37,10 +37,16 @@ if [ -n "${MQTT_USERNAME:-}" ]; then
   MQTT_AUTH="-u ${MQTT_USERNAME} -P ${MQTT_PASSWORD:-}"
 fi
 
+# mosquitto_pub(このホストのバージョン1.6.9で確認済み)は認証拒否等の
+# CONNECT失敗時でも終了コード0を返すため、終了コードは信用せず、-dの出力に
+# 実際に現れるCONNACK reason codeで成否を判定する(0=成功、それ以外=失敗)。
 # shellcheck disable=SC2086
-mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" $MQTT_AUTH -q 1 -r -t "$MQTT_TOPIC" -m "$JSON" || {
+MQTT_OUTPUT=$(mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" $MQTT_AUTH -q 1 -r -t "$MQTT_TOPIC" -m "$JSON" -d 2>&1) || true
+
+if ! printf '%s\n' "$MQTT_OUTPUT" | grep -q 'CONNACK (0)'; then
   echo "mosquitto_pub failed: broker ${MQTT_HOST}:${MQTT_PORT} unreachable or auth error" >&2
+  printf '%s\n' "$MQTT_OUTPUT" >&2
   exit 1
-}
+fi
 
 echo "published to ${MQTT_TOPIC}"

@@ -31,7 +31,12 @@ pga|PGA|gal|
 seismic|Seismic Intensity||
 '
 
-echo "$METRICS" | while IFS='|' read -r key name unit device_class; do
+FAILED=0
+
+# echo "$METRICS" | while ... はwhileがサブシェルで動くためFAILEDの更新が
+# ループ外に伝わらない。ヒアドキュメントでリダイレクトすることで同一シェル
+# 内でループを実行する。
+while IFS='|' read -r key name unit device_class; do
   [ -z "$key" ] && continue
 
   device_class_json=""
@@ -48,9 +53,25 @@ echo "$METRICS" | while IFS='|' read -r key name unit device_class; do
 EOF
 )
 
+  # mosquitto_pub(1.6.9で確認済み)は認証拒否でも終了コード0を返すため、
+  # -dの出力の実際のCONNACK reason codeで成否を判定する。
   # shellcheck disable=SC2086
-  mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" $MQTT_AUTH -r \
+  MQTT_OUTPUT=$(mosquitto_pub -h "$MQTT_HOST" -p "$MQTT_PORT" $MQTT_AUTH -r \
     -t "homeassistant/sensor/${DEVICE_ID}/${key}/config" \
-    -m "$PAYLOAD"
-  echo "published discovery config for ${key}"
-done
+    -m "$PAYLOAD" -d 2>&1) || true
+
+  if printf '%s\n' "$MQTT_OUTPUT" | grep -q 'CONNACK (0)'; then
+    echo "published discovery config for ${key}"
+  else
+    echo "failed to publish discovery config for ${key}: broker ${MQTT_HOST}:${MQTT_PORT} unreachable or auth error" >&2
+    printf '%s\n' "$MQTT_OUTPUT" >&2
+    FAILED=1
+  fi
+done <<EOF
+$METRICS
+EOF
+
+if [ "$FAILED" -ne 0 ]; then
+  echo "one or more discovery configs failed to publish" >&2
+  exit 1
+fi
