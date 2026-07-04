@@ -45,8 +45,10 @@ sudo systemctl start 2jciebu-mqtt-discovery.service
 | `MQTT_HOST` | (必須) | MQTTブローカーのホスト |
 | `MQTT_PORT` | `1883` | |
 | `MQTT_USERNAME` / `MQTT_PASSWORD` | 空 | 空なら認証なしで接続 |
-| `MQTT_TOPIC` | `sensors/2jciebu/state` | publish先トピック |
-| `DEVICE_ID` | `2jciebu_01` | (Discoveryスクリプト用) Home Assistant上のデバイス識別子。複数センサーを増設する場合はホストごとに一意な値にすること |
+| `DEVICE_ID` | `2jciebu_01` | Home Assistant上のデバイス識別子、かつ`MQTT_TOPIC`の名前空間にも使われる。`[a-zA-Z0-9_-]+`の文字種のみ使用可(HAのDiscovery仕様上の制約)。複数センサーを増設する場合はホストごとに一意な値にすること |
+| `MQTT_TOPIC` | `sensors/2jciebu/<DEVICE_ID>/state`（自動導出） | publish先トピック。既定は`DEVICE_ID`を含む形で自動生成されるため、複数デバイスを増設してもトピックが衝突しない。固定したい場合のみ`.env`で明示的に上書きする |
+
+**注意:** `.env`はsystemdの`EnvironmentFile=`で読み込まれるため、`.env`内で`MQTT_TOPIC=${DEVICE_ID}/...`のような変数展開を書いても展開されない（systemdはシェルではないため）。`DEVICE_ID`からの導出は`poll-and-publish.sh`と`discovery/publish-discovery.sh`側の実際のシェル変数展開で行っている。
 
 ポーリング間隔は`2jciebu-mqtt-bridge.timer`の`OnCalendar=`行（既定`minutely`=1分間隔）で決まる。変更したい場合は`/etc/systemd/system/2jciebu-mqtt-bridge.timer`を編集し`sudo systemctl daemon-reload && sudo systemctl restart 2jciebu-mqtt-bridge.timer`する。
 
@@ -62,7 +64,7 @@ sudo systemctl start 2jciebu-mqtt-discovery.service
 
 ```bash
 curl -s http://localhost:8000/metrics | grep sensor_omron    # exporterが値を返しているか確認
-mosquitto_sub -h <broker> -t sensors/2jciebu/state -v         # 別ターミナルで購読
+mosquitto_sub -h <broker> -t sensors/2jciebu/2jciebu_01/state -v   # 別ターミナルで購読(DEVICE_IDの既定値を含むトピック)
 
 sudo systemctl start 2jciebu-mqtt-bridge.service               # timerを待たず今すぐ1回実行
 journalctl -u 2jciebu-mqtt-bridge.service -n 20                # 実行結果を確認

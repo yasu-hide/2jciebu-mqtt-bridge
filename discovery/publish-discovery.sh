@@ -3,8 +3,10 @@ set -eu
 
 : "${MQTT_HOST:?MQTT_HOST is required}"
 : "${MQTT_PORT:=1883}"
-: "${MQTT_TOPIC:=sensors/2jciebu/state}"
 : "${DEVICE_ID:=2jciebu_01}"
+# poll-and-publish.shと同じ導出方法。ずれるとstate_topicの不一致でHA側が
+# 値を受け取れなくなる(要:両スクリプトで常に同一のデフォルト式を保つ)。
+: "${MQTT_TOPIC:=sensors/2jciebu/${DEVICE_ID}/state}"
 
 MQTT_AUTH=""
 if [ -n "${MQTT_USERNAME:-}" ]; then

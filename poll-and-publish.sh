@@ -4,7 +4,10 @@ set -eu
 : "${EXPORTER_URL:=http://localhost:8000/metrics}"
 : "${MQTT_HOST:?MQTT_HOST is required}"
 : "${MQTT_PORT:=1883}"
-: "${MQTT_TOPIC:=sensors/2jciebu/state}"
+: "${DEVICE_ID:=2jciebu_01}"
+# 複数デバイス増設時にトピックが衝突しないよう、既定でDEVICE_IDを名前空間に含める。
+# (.envのEnvironmentFile=は${VAR}展開をしないため、ここで実際のシェル展開を行う)
+: "${MQTT_TOPIC:=sensors/2jciebu/${DEVICE_ID}/state}"
 
 METRICS=$(curl -sf --max-time 5 "$EXPORTER_URL") || {
   echo "fetch failed: ${EXPORTER_URL} unreachable" >&2
